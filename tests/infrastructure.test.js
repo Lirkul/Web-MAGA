@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import test from 'node:test';
-import { app } from '../src/app.js';
+import { createApp } from '../src/app.js';
 import { openDatabase } from '../src/db/database.js';
 import { migrateDatabase } from '../src/db/migrate.js';
 
@@ -155,6 +155,8 @@ test('creation defaults and update triggers maintain UTC timestamps', (context) 
 });
 
 test('HTTP health, unknown routes and invalid JSON return the expected responses', async (context) => {
+  const { database } = databaseFixture(context);
+  const app = createApp(database);
   const server = app.listen(0, '127.0.0.1');
   context.after(() => new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
@@ -166,7 +168,7 @@ test('HTTP health, unknown routes and invalid JSON return the expected responses
   assert.equal(health.status, 200);
   assert.deepEqual(await health.json(), { status: 'ok' });
 
-  const unknown = await fetch(`${base}/api/books`);
+  const unknown = await fetch(`${base}/api/unknown`);
   assert.equal(unknown.status, 404);
   assert.equal((await unknown.json()).error.code, 'NOT_FOUND');
 

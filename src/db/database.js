@@ -9,6 +9,8 @@ export function openDatabase(databasePath = config.databasePath) {
   const database = new Database(databasePath);
   try {
     database.pragma('foreign_keys = ON');
+    // Встроенный lower() SQLite не меняет регистр кириллицы.
+    database.function('lower_unicode', { deterministic: true }, (value) => value.toLowerCase());
     return database;
   } catch (error) {
     database.close();

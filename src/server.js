@@ -1,4 +1,4 @@
-import { app } from './app.js';
+import { createApp } from './app.js';
 import { config } from './config/index.js';
 import { openDatabase } from './db/database.js';
 import { migrateDatabase } from './db/migrate.js';
@@ -12,6 +12,7 @@ try {
   throw error;
 }
 
+const app = createApp(database);
 const server = app.listen(config.port, () => {
   console.log(`Library API: http://localhost:${config.port}`);
   console.log(`SQLite: ${config.databasePath}`);
