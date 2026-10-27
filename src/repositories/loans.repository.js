@@ -19,7 +19,7 @@ export function createLoansRepository(database) {
     FROM loans WHERE readerId = @readerId AND status IN ('ACTIVE', 'OVERDUE')
   `);
   const markReturned = database.prepare(`
-    UPDATE loans SET status = 'RETURNED', returnedAt = @returnedAt
+    UPDATE loans SET status = 'RETURNED', returnedAt = @returnedAt, fineAmount = @fineAmount
     WHERE id = @id AND status IN ('ACTIVE', 'OVERDUE')
   `);
 
@@ -27,7 +27,7 @@ export function createLoansRepository(database) {
     findById: (id) => find.get(id),
     insert: (loan) => insert.run(loan).lastInsertRowid,
     readerSummary: (readerId, today) => readerSummary.get({ readerId, today }),
-    markReturned: (id, returnedAt) => markReturned.run({ id, returnedAt }).changes,
+    markReturned: (id, returnedAt, fineAmount) => markReturned.run({ id, returnedAt, fineAmount }).changes,
     list: database.transaction(({ page, limit, status, bookId, readerId }) => {
       const bindings = { status: status ?? null, bookId: bookId ?? null, readerId: readerId ?? null };
       return {

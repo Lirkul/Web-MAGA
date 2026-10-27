@@ -339,7 +339,7 @@ test('query and id validation reject ambiguous, unsafe and unsupported values', 
   await request('GET', '/readers/9999', undefined, 404);
 });
 
-test('server errors hide implementation details, oversized JSON is rejected, and stage 4+ APIs remain absent', async (context) => {
+test('server errors hide implementation details, oversized JSON is rejected, and later APIs remain absent', async (context) => {
   const { request, database } = await apiFixture(context);
   assert.equal((await request('POST', '/books', { title: 'a'.repeat(110000) }, 413)).data.error.code, 'PAYLOAD_TOO_LARGE');
   await request('GET', '/loans', undefined, 200);

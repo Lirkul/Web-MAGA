@@ -3,6 +3,7 @@ import { createBooksRepository } from '../repositories/books.repository.js';
 import { createReadersRepository } from '../repositories/readers.repository.js';
 import { createLoansRepository } from '../repositories/loans.repository.js';
 import { addUtcDays, utcDate } from '../utils/dates.js';
+import { calculateFine } from '../utils/fines.js';
 import { HttpError } from '../utils/errors.js';
 
 export function createLoansService(database, { now = () => new Date(), settings = config } = {}) {
@@ -58,11 +59,12 @@ export function createLoansService(database, { now = () => new Date(), settings 
       if (loan.status === 'RETURNED') {
         throw new HttpError(409, 'LOAN_ALREADY_RETURNED', 'Книга по этой выдаче уже возвращена');
       }
-      const changed = loans.markReturned(id, now().toISOString());
+      const timestamp = now();
+      const fineAmount = calculateFine(loan.dueDate, utcDate(timestamp), settings.dailyFineKopecks);
+      const changed = loans.markReturned(id, timestamp.toISOString(), fineAmount);
       if (changed !== 1) {
         throw new HttpError(409, 'LOAN_ALREADY_RETURNED', 'Книга по этой выдаче уже возвращена');
       }
-      // Расчёт окончательного штрафа добавляется в этапе 4; текущая сумма сохраняется.
       return get(id);
     }).immediate,
   };

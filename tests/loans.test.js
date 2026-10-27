@@ -226,11 +226,11 @@ test('return restores availability once, preserves totalCopies and works after b
   assert.deepEqual((await api.request('GET', `/loans/${loan.id}`)).data, returned);
 });
 
-test('return closes OVERDUE records and preserves their existing fine until stage 4', async (context) => {
+test('return closes OVERDUE records and replaces a stale fine with the final amount', async (context) => {
   const api = await fixture(context);
   const book = await api.book();
   const reader = await api.reader();
-  const id = api.loan(book.id, reader.id, 'OVERDUE', timestamp, { dueDate: '2026-10-24', fineAmount: 3000 });
+  const id = api.loan(book.id, reader.id, 'OVERDUE', timestamp, { dueDate: '2026-10-24', fineAmount: 1000 });
   const returned = (await api.request('POST', `/loans/${id}/return`, {})).data;
   assert.equal(returned.status, 'RETURNED');
   assert.equal(returned.fineAmount, 3000);
