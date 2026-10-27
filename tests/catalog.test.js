@@ -1,73 +1,6 @@
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
-import { createApp } from '../src/app.js';
-import { openDatabase } from '../src/db/database.js';
-import { migrateDatabase } from '../src/db/migrate.js';
-
-async function apiFixture(context) {
-  const directory = mkdtempSync(join(tmpdir(), 'library-catalog-'));
-  const path = join(directory, 'test.sqlite');
-  const database = openDatabase(path);
-  migrateDatabase(database);
-  const server = createApp(database).listen(0, '127.0.0.1');
-  context.after(async () => {
-    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-    if (database.open) database.close();
-    rmSync(directory, { recursive: true, force: true });
-  });
-  await once(server, 'listening');
-  const base = `http://127.0.0.1:${server.address().port}`;
-
-  async function request(method, route, body, expectedStatus = 200) {
-    const response = await fetch(`${base}/api${route}`, {
-      method,
-      ...(body !== undefined ? {
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      } : {}),
-    });
-    const content = await response.text();
-    assert.equal(response.status, expectedStatus, `${method} ${route}: ${content}`);
-    if (expectedStatus === 204) {
-      assert.equal(content, '');
-      return { headers: response.headers };
-    }
-    assert.match(response.headers.get('content-type'), /application\/json/);
-    return { data: JSON.parse(content), headers: response.headers };
-  }
-
-  let bookNumber = 0;
-  let readerNumber = 0;
-  async function book(changes = {}) {
-    bookNumber += 1;
-    return (await request('POST', '/books', {
-      title: 'Учебная книга', authors: ['Автор Один', 'Автор Два'],
-      isbn: `978${String(bookNumber).padStart(10, '0')}`,
-      publishedYear: 2020, genre: 'Наука', totalCopies: 3, ...changes,
-    }, 201)).data;
-  }
-  async function reader(changes = {}) {
-    readerNumber += 1;
-    return (await request('POST', '/readers', {
-      fullName: 'Иван Иванов', email: `reader${readerNumber}@example.com`,
-      registrationNumber: `R-${readerNumber}`, ...changes,
-    }, 201)).data;
-  }
-
-  // Данные для проверок связей создаются SQL, без API выдачи из этапа 3.
-  function loan(bookId, readerId, status = 'ACTIVE', loanedAt = '2026-10-01T12:00:00.000Z') {
-    return database.prepare(`
-      INSERT INTO loans (bookId, readerId, dueDate, status, returnedAt, loanedAt)
-      VALUES (?, ?, '2026-11-10', ?, ?, ?)
-    `).run(bookId, readerId, status, status === 'RETURNED' ? '2026-10-20T12:00:00.000Z' : null, loanedAt)
-      .lastInsertRowid;
-  }
-
-  return { request, book, reader, loan, database, path };
-}
+import { apiFixture } from './support/api-fixture.js';
 
 function validationError(data) {
   assert.equal(data.error.code, 'VALIDATION_ERROR');
@@ -406,11 +339,11 @@ test('query and id validation reject ambiguous, unsafe and unsupported values', 
   await request('GET', '/readers/9999', undefined, 404);
 });
 
-test('server errors hide implementation details, oversized JSON is rejected, and later APIs remain absent', async (context) => {
+test('server errors hide implementation details, oversized JSON is rejected, and stage 4+ APIs remain absent', async (context) => {
   const { request, database } = await apiFixture(context);
   assert.equal((await request('POST', '/books', { title: 'a'.repeat(110000) }, 413)).data.error.code, 'PAYLOAD_TOO_LARGE');
-  await request('POST', '/loans', { bookId: 1, readerId: 1 }, 404);
-  await request('POST', '/loans/1/return', undefined, 404);
+  await request('GET', '/loans', undefined, 200);
+  await request('POST', '/loans/9999/return', undefined, 404);
   await request('GET', '/stats', undefined, 404);
   const log = context.mock.method(console, 'error', () => {});
   database.close();

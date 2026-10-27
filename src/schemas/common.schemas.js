@@ -8,7 +8,7 @@ export function text(minimum = 1, maximum) {
 
 export const positiveInteger = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 
-const integerQuery = z.string().regex(/^[1-9]\d*$/, 'Ожидается положительное целое число')
+export const integerQuery = z.string().regex(/^[1-9]\d*$/, 'Ожидается положительное целое число')
   .transform(Number).pipe(positiveInteger);
 
 export const idParamsSchema = z.strictObject({ id: integerQuery });
