@@ -1,5 +1,7 @@
 import express from 'express';
 import { checkDatabaseConnection } from './db/pool.js';
+import { ApiError } from './errors/ApiError.js';
+import { errorHandler } from './middlewares/errorHandler.js';
 
 const app = express();
 
@@ -13,5 +15,11 @@ app.get('/api/health', async (req, res) => {
     res.status(503).json({ status: 'error', database: 'disconnected' });
   }
 });
+
+app.use((req, res, next) => {
+  next(ApiError.notFound('Эндпоинт не найден'));
+});
+
+app.use(errorHandler);
 
 export default app;
