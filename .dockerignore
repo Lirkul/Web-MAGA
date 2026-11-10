@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+node_modules
+logs
+*.log
+tmp
+temp
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
