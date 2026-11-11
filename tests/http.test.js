@@ -8,7 +8,7 @@ import { ApiError } from '../src/errors/ApiError.js';
 import { errorHandler } from '../src/middlewares/errorHandler.js';
 import { validate } from '../src/middlewares/validate.js';
 
-vi.mock('../src/db/pool.js', () => ({ checkDatabaseConnection: vi.fn() }));
+vi.mock('../src/db/pool.js', () => ({ checkDatabaseConnection: vi.fn(), pool: { query: vi.fn() } }));
 
 beforeEach(() => {
   vi.resetAllMocks();
