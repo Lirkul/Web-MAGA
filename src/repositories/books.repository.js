@@ -1,14 +1,11 @@
 import { pool } from '../db/pool.js';
+import { escapeLike } from './sql.js';
 
 const selectBooks = `
   SELECT b.*, b.total_copies - COUNT(l.id) AS available_copies
   FROM books b
   LEFT JOIN loans l ON l.book_id = b.id AND l.returned_at IS NULL
 `;
-
-function escapeLike(value) {
-  return value.replace(/[\\%_]/g, '\\$&');
-}
 
 export async function insertBook({ title, authors, isbn, publicationYear, genre, totalCopies }) {
   const { rows } = await pool.query(`

@@ -1,6 +1,6 @@
 # Система управления библиотечным фондом
 
-Серверное REST API на Node.js и Express. Реализованы создание и просмотр каталога книг, SQL-миграции и проверка состояния приложения и БД.
+Серверное REST API на Node.js и Express. Реализованы каталог книг, регистрация и управление читателями, SQL-миграции и проверка состояния приложения и БД.
 
 ## Запуск через Docker Compose
 
@@ -92,7 +92,7 @@ Middleware `validate(schema, source)` принимает Zod-схему и ис�
 
 Ошибки проверки возвращаются с кодом `VALIDATION_ERROR`, сообщением «Некорректные данные запроса» и деталями `{path, message}` для каждого неверного поля. Вложенные пути записываются через точку, например `contacts.0.email`. Схемы книг находятся в `src/schemas/books.schemas.js`.
 
-`npm test` запускает тесты Vitest/Supertest: middleware проверяются с подменой БД, а API книг и миграции — с настоящей PostgreSQL по `TEST_DATABASE_URL`. Тесты книг создают отдельную временную схему на каждый тест и удаляют её после выполнения. Вспомогательные маршруты ошибок существуют только в тестовом приложении. Проверка `/api/health` сохраняет отдельные ответы 200/503, описанные ниже.
+`npm test` запускает тесты Vitest/Supertest: middleware проверяются с подменой БД, а API книг, читателей и миграции — с настоящей PostgreSQL по `TEST_DATABASE_URL`. Тесты сущностей создают отдельную временную схему на каждый тест и удаляют её после выполнения. Вспомогательные маршруты ошибок существуют только в тестовом приложении. Проверка `/api/health` сохраняет отдельные ответы 200/503, описанные ниже.
 
 ## API книг
 
@@ -150,6 +150,49 @@ DELETE разрешён только при полном отсутствии и
 | 409 | `BOOK_ALREADY_EXISTS` | ISBN занят другой книгой |
 | 409 | `INSUFFICIENT_TOTAL_COPIES` | Количество экземпляров не может быть меньше числа невозвращённых выдач |
 | 409 | `BOOK_HAS_LOANS` | Невозможно удалить книгу, имеющую историю выдач |
+
+## API читателей
+
+| Метод и путь | Результат |
+| --- | --- |
+| `POST /api/readers` | Регистрация, HTTP 201, статус `active` |
+| `GET /api/readers` | Список с поиском, статусом и пагинацией |
+| `GET /api/readers/:id` | Карточка без истории выдач |
+| `PATCH /api/readers/:id` | Редактирование данных, блокировка или разблокировка, HTTP 200 |
+
+Примеры запросов (Bash):
+
+```sh
+curl -X POST http://localhost:3000/api/readers \
+  -H 'Content-Type: application/json' \
+  -d '{"fullName":"Иванов Иван Иванович","email":"ivanov@example.com","registrationNumber":"LIB-000001"}'
+curl --get http://localhost:3000/api/readers \
+  --data-urlencode 'search=Иванов' --data-urlencode 'status=active' \
+  --data-urlencode 'page=1' --data-urlencode 'limit=10'
+curl http://localhost:3000/api/readers/1
+curl -X PATCH http://localhost:3000/api/readers/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"fullName":"Иванов Иван Петрович","email":"ivan.petrov@example.com"}'
+curl -X PATCH http://localhost:3000/api/readers/1 \
+  -H 'Content-Type: application/json' -d '{"status":"blocked"}'
+curl -X PATCH http://localhost:3000/api/readers/1 \
+  -H 'Content-Type: application/json' -d '{"status":"active"}'
+```
+
+При регистрации обязательны непустые `fullName`, `registrationNumber` и корректный `email`. Пробелы по краям удаляются, email сохраняется в нижнем регистре. Статус `active` и временные метки устанавливает БД; клиенту запрещено задавать `status`, `id`, `createdAt`, `updatedAt` при POST. Уникальность email без учёта регистра и регистрационного номера обеспечивается существующими индексами PostgreSQL, в том числе при конкурентных запросах.
+
+PATCH разрешает только `fullName`, `email`, `registrationNumber`, `status`. Отсутствующие поля сохраняются, пустой объект, неизвестные поля и `null` отклоняются. Обновление выполняется одним атомарным UPDATE с `RETURNING`, меняет `updatedAt` и при конфликте не сохраняет ни одно поле запроса.
+
+`search` ищет подстроку в ФИО, email или регистрационном номере без учёта регистра. `status` принимает только `active`/`blocked`. Поиск и фильтр можно совмещать. `page=1`, `limit=10` по умолчанию, максимум `limit=100`; сортировка `id ASC`, формат ответа `data/pagination` совпадает с каталогом книг. Фильтрация, подсчёт и LIMIT/OFFSET выполняются в PostgreSQL. Для ID и пагинации книги и читатели используют общие схемы из `src/schemas/common.schemas.js`.
+
+Блокировка сохраняет читателя и не меняет его выдачи. Заблокированный читатель доступен через GET и фильтр `status=blocked`. Повторное выставление текущего статуса разрешено. В дальнейшем заблокированному читателю будет запрещена новая выдача; API выдач пока не реализован. DELETE читателей и отдельные `/block`/`unblock` отсутствуют.
+
+| HTTP | Код | Значение |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | Неверные поля, ID, query, статус или пустой PATCH |
+| 404 | `READER_NOT_FOUND` | Читатель отсутствует |
+| 409 | `EMAIL_ALREADY_EXISTS` | Email занят другим читателем |
+| 409 | `REGISTRATION_NUMBER_ALREADY_EXISTS` | Регистрационный номер занят другим читателем |
 
 ## Проверка состояния
 
