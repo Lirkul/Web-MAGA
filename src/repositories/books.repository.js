@@ -19,8 +19,8 @@ export async function insertBook({ title, authors, isbn, publicationYear, genre,
   return rows[0];
 }
 
-export async function findBookById(id) {
-  const { rows } = await pool.query(`${selectBooks} WHERE b.id = $1 GROUP BY b.id`, [id]);
+export async function findBookById(id, client = pool) {
+  const { rows } = await client.query(`${selectBooks} WHERE b.id = $1 GROUP BY b.id`, [id]);
   return rows[0];
 }
 
@@ -47,4 +47,44 @@ export async function findBooks({ search, isbnSearch, genre, page, limit }) {
     LIMIT $${values.length + 1} OFFSET $${values.length + 2}
   `, [...values, limit, (page - 1) * limit]);
   return { rows, total: Number(countResult.rows[0].total) };
+}
+
+export async function lockBookById(id, client) {
+  const { rows } = await client.query('SELECT id FROM books WHERE id = $1 FOR UPDATE', [id]);
+  return rows[0];
+}
+
+export async function countUnreturnedLoans(id, client) {
+  const { rows } = await client.query(
+    'SELECT COUNT(*) AS count FROM loans WHERE book_id = $1 AND returned_at IS NULL', [id],
+  );
+  return Number(rows[0].count);
+}
+
+export async function updateBookFields(id, data, client) {
+  const columns = {
+    title: 'title', authors: 'authors', isbn: 'isbn',
+    publicationYear: 'publication_year', genre: 'genre', totalCopies: 'total_copies',
+  };
+  const fields = Object.entries(columns).filter(([field]) => data[field] !== undefined);
+  const values = fields.map(([field]) => data[field]);
+  // Имена колонок берутся только из списка выше; значения передаются параметрами.
+  const assignments = fields.map(([, column], index) => `${column} = $${index + 1}`);
+  values.push(id);
+  await client.query(`
+    UPDATE books SET ${assignments.join(', ')}, updated_at = clock_timestamp()
+    WHERE id = $${values.length}
+  `, values);
+}
+
+export async function hasBookLoans(id) {
+  const { rows } = await pool.query(
+    'SELECT EXISTS (SELECT 1 FROM loans WHERE book_id = $1) AS has_loans', [id],
+  );
+  return rows[0].has_loans;
+}
+
+export async function deleteBookById(id) {
+  const { rows } = await pool.query('DELETE FROM books WHERE id = $1 RETURNING id', [id]);
+  return rows[0];
 }

@@ -11,3 +11,12 @@ export async function listBooks(req, res) {
 export async function getBookById(req, res) {
   res.json(await booksService.getBookById(req.validated.params.id));
 }
+
+export async function updateBook(req, res) {
+  res.json(await booksService.updateBook(req.validated.params.id, req.validated.body));
+}
+
+export async function deleteBook(req, res) {
+  await booksService.deleteBook(req.validated.params.id);
+  res.status(204).end();
+}

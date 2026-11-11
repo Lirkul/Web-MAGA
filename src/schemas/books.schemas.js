@@ -17,7 +17,7 @@ function isValidIsbn(value) {
   return false;
 }
 
-export const createBookSchema = z.object({
+const bookSchema = z.object({
   title: requiredText,
   authors: z.array(requiredText).min(1, 'Укажите хотя бы одного автора'),
   isbn: z.string()
@@ -27,8 +27,17 @@ export const createBookSchema = z.object({
     .refine((value) => value <= new Date().getUTCFullYear() + 1, 'Год не должен быть позже следующего календарного года')
     .optional(),
   genre: text.optional(),
-  totalCopies: z.number().int().min(0).max(2147483647).default(0),
+  totalCopies: z.number().int().min(0).max(2147483647),
 }).strict();
+
+export const createBookSchema = bookSchema.extend({
+  totalCopies: bookSchema.shape.totalCopies.default(0),
+});
+
+export const updateBookSchema = bookSchema.partial().extend({
+  publicationYear: bookSchema.shape.publicationYear.nullable(),
+  genre: bookSchema.shape.genre.nullable(),
+}).refine((data) => Object.keys(data).length > 0, 'Укажите хотя бы одно поле для изменения');
 
 const positiveInteger = z.string()
   .regex(/^\d+$/, 'Ожидается положительное целое число')
