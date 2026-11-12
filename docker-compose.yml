@@ -24,6 +24,7 @@ services:
     environment:
       PORT: 3000
       FINE_PER_DAY: ${FINE_PER_DAY-10}
+      CRON_SCHEDULE: ${CRON_SCHEDULE-5 0 * * *}
       DATABASE_URL: postgresql://${POSTGRES_USER:-web_maga}:${POSTGRES_PASSWORD:-demo_password}@db:5432/${POSTGRES_DB:-web_maga}
       TZ: UTC
     ports:

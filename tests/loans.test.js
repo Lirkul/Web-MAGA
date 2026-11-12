@@ -4,6 +4,7 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest';
 import app from '../src/app.js';
 import { runMigrations } from '../src/db/migrate.js';
+import { checkOverdueLoans } from '../src/services/loans.service.js';
 
 const { query, connect } = vi.hoisted(() => ({ query: vi.fn(), connect: vi.fn() }));
 // Только подключение направлено в тестовую схему. SQL и блокировки — настоящие PostgreSQL.
@@ -469,4 +470,60 @@ it('returns 404 for a missing loan and 400 for invalid ids, filters and paginati
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
     expect(response.body.error.details.length).toBeGreaterThan(0);
   }
+});
+
+async function createOverdueFixtures(offsets) {
+  const data = await createFixtures(offsets.length);
+  const { rows } = await pool.query(`
+    INSERT INTO loans (book_id, reader_id, due_date)
+    SELECT $1, $2, (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date + day_offset
+    FROM unnest($3::integer[]) AS dates(day_offset)
+    RETURNING *
+  `, [data.bookId, data.readerId, offsets]);
+  return rows;
+}
+
+it('marks past-due active loans overdue without changing dates, fines, books or readers', async () => {
+  const before = await createOverdueFixtures([-1, -3]);
+  const books = (await pool.query('SELECT * FROM books')).rows;
+  const readers = (await pool.query('SELECT * FROM readers')).rows;
+  expect(await checkOverdueLoans()).toBe(2);
+  expect((await pool.query('SELECT * FROM loans ORDER BY id')).rows)
+    .toEqual(before.map((loan) => ({ ...loan, status: 'overdue' })));
+  expect((await pool.query('SELECT * FROM books')).rows).toEqual(books);
+  expect((await pool.query('SELECT * FROM readers')).rows).toEqual(readers);
+});
+
+it('keeps loans due today in UTC or in the future active', async () => {
+  const before = await createOverdueFixtures([0, 1, 14]);
+  expect(await checkOverdueLoans()).toBe(0);
+  expect((await pool.query('SELECT * FROM loans ORDER BY id')).rows).toEqual(before);
+});
+
+it('does not change returned loans even when a stored status is active', async () => {
+  const loans = await createOverdueFixtures([-2, -3]);
+  await pool.query(`
+    UPDATE loans SET returned_at = CURRENT_TIMESTAMP,
+      status = CASE WHEN id = $1 THEN 'returned' ELSE 'active' END,
+      fine_amount = 20.00
+  `, [loans[0].id]);
+  const before = (await pool.query('SELECT * FROM loans ORDER BY id')).rows;
+  expect(await checkOverdueLoans()).toBe(0);
+  expect((await pool.query('SELECT * FROM loans ORDER BY id')).rows).toEqual(before);
+});
+
+it('does not update loans that are already overdue', async () => {
+  await createOverdueFixtures([-1, -5]);
+  await pool.query("UPDATE loans SET status = 'overdue'");
+  const before = (await pool.query('SELECT * FROM loans ORDER BY id')).rows;
+  expect(await checkOverdueLoans()).toBe(0);
+  expect((await pool.query('SELECT * FROM loans ORDER BY id')).rows).toEqual(before);
+});
+
+it('returns zero on a repeated overdue check and preserves all recorded data', async () => {
+  await createOverdueFixtures([-2, 0, 2]);
+  expect(await checkOverdueLoans()).toBe(1);
+  const before = (await pool.query('SELECT * FROM loans ORDER BY id')).rows;
+  expect(await checkOverdueLoans()).toBe(0);
+  expect((await pool.query('SELECT * FROM loans ORDER BY id')).rows).toEqual(before);
 });

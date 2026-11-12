@@ -29,6 +29,10 @@ export async function listLoans(query) {
   };
 }
 
+export async function checkOverdueLoans() {
+  return loansRepository.markOverdueLoans();
+}
+
 export async function getLoanById(id) {
   const row = await loansRepository.findLoanById(id);
   if (!row) throw new ApiError(404, 'LOAN_NOT_FOUND', 'Выдача не найдена');

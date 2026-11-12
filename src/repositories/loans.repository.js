@@ -9,6 +9,15 @@ export async function findLoanById(id) {
   return rows[0];
 }
 
+export async function markOverdueLoans() {
+  const { rowCount } = await pool.query(`
+    UPDATE loans SET status = $1
+    WHERE status = $2 AND returned_at IS NULL
+      AND due_date < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
+  `, ['overdue', 'active']);
+  return rowCount;
+}
+
 export async function findLoans({ readerId, bookId, status, page, limit }) {
   const conditions = [];
   const values = [];
