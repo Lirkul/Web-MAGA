@@ -1,5 +1,6 @@
 import { pool } from '../db/pool.js';
 import { ApiError } from '../errors/ApiError.js';
+import { getFinePerDay } from '../config/fine.js';
 import * as booksRepository from '../repositories/books.repository.js';
 import * as readersRepository from '../repositories/readers.repository.js';
 import * as loansRepository from '../repositories/loans.repository.js';
@@ -37,6 +38,31 @@ export async function createLoan(data) {
     const loan = await loansRepository.insertLoan(data, client);
     await client.query('COMMIT');
     return toLoan(loan);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function returnLoan(id) {
+  const finePerDay = getFinePerDay();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const reference = await loansRepository.findLoanBook(id, client);
+    if (!reference) throw new ApiError(404, 'LOAN_NOT_FOUND', 'Выдача не найдена');
+
+    const book = await booksRepository.lockBookById(reference.book_id, client);
+    const loan = await loansRepository.lockLoanById(id, client);
+    if (!book || !loan) throw new ApiError(404, 'LOAN_NOT_FOUND', 'Выдача не найдена');
+    if (loan.returned_at !== null) {
+      throw new ApiError(409, 'LOAN_ALREADY_RETURNED', 'Книга уже возвращена');
+    }
+    const returned = await loansRepository.markLoanReturned(id, finePerDay, client);
+    await client.query('COMMIT');
+    return toLoan(returned);
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

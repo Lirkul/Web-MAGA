@@ -32,6 +32,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await pool?.end();
   await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
 });
@@ -275,8 +276,92 @@ it('sees a reader block committed while its FOR SHARE is waiting', async () => {
   }
 }, 10000);
 
-it('does not expose loan listing or return endpoints', async () => {
+it('does not expose loan listing endpoints', async () => {
   expect((await request(app).get('/api/loans')).status).toBe(404);
   expect((await request(app).get('/api/loans/1')).status).toBe(404);
-  expect((await request(app).post('/api/loans/1/return')).status).toBe(404);
+});
+
+it('returns an on-time loan with no fine, even for a blocked reader', async () => {
+  vi.stubEnv('FINE_PER_DAY', undefined);
+  const data = await createFixtures();
+  const issued = await request(app).post('/api/loans').send(data).expect(201);
+  await request(app).patch(`/api/readers/${data.readerId}`).send({ status: 'blocked' }).expect(200);
+  const response = await request(app).post(`/api/loans/${issued.body.id}/return`);
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual({
+    ...issued.body, status: 'returned', returnedAt: expect.any(String), fineAmount: '0.00',
+  });
+  expect(pool.idleCount).toBe(pool.totalCount);
+});
+
+it('charges overdue calendar days for active and overdue loans without relying on cron', async () => {
+  vi.stubEnv('FINE_PER_DAY', undefined);
+  const data = await createFixtures();
+  for (const status of ['active', 'overdue']) {
+    const issued = await request(app).post('/api/loans').send(data).expect(201);
+    await pool.query(`
+      UPDATE loans SET due_date = (clock_timestamp() AT TIME ZONE 'UTC')::date - 2,
+                       status = $2 WHERE id = $1
+    `, [issued.body.id, status]);
+    const response = await request(app).post(`/api/loans/${issued.body.id}/return`).send({});
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ status: 'returned', fineAmount: '20.00' });
+    const stored = (await pool.query('SELECT returned_at, fine_amount::text FROM loans WHERE id = $1', [issued.body.id])).rows[0];
+    expect(stored.returned_at.toISOString()).toBe(response.body.returnedAt);
+    expect(stored.fine_amount).toBe('20.00');
+  }
+});
+
+it('rejects a repeated return and preserves the recorded return time and fine', async () => {
+  const data = await createFixtures();
+  const issued = await request(app).post('/api/loans').send(data).expect(201);
+  await request(app).post(`/api/loans/${issued.body.id}/return`).expect(200);
+  const before = (await pool.query('SELECT * FROM loans WHERE id = $1', [issued.body.id])).rows[0];
+  const repeated = await request(app).post(`/api/loans/${issued.body.id}/return`);
+  expect(repeated.status).toBe(409);
+  expect(repeated.body).toEqual({ error: { code: 'LOAN_ALREADY_RETURNED', message: 'Книга уже возвращена', details: [] } });
+  expect((await pool.query('SELECT * FROM loans WHERE id = $1', [issued.body.id])).rows[0]).toEqual(before);
+});
+
+it('returns LOAN_NOT_FOUND for a missing loan and releases the transaction', async () => {
+  const response = await request(app).post('/api/loans/999999/return');
+  expect(response.status).toBe(404);
+  expect(response.body).toEqual({ error: { code: 'LOAN_NOT_FOUND', message: 'Выдача не найдена', details: [] } });
+  expect(pool.idleCount).toBe(pool.totalCount);
+});
+
+it('restores book availability after return without changing totalCopies or erasing history', async () => {
+  const data = await createFixtures();
+  const issued = await request(app).post('/api/loans').send(data).expect(201);
+  expect((await request(app).get(`/api/books/${data.bookId}`)).body.availableCopies).toBe(0);
+  await request(app).post(`/api/loans/${issued.body.id}/return`).send({}).expect(200);
+  expect((await request(app).get(`/api/books/${data.bookId}`)).body).toMatchObject({ totalCopies: 1, availableCopies: 1 });
+  expect((await request(app).get('/api/books')).body.data[0].availableCopies).toBe(1);
+  expect(await loanCount()).toBe(1);
+});
+
+it('allows exactly one of two simultaneous returns using PostgreSQL locks', async () => {
+  const data = await createFixtures();
+  const issued = await request(app).post('/api/loans').send(data).expect(201);
+  const responses = await Promise.all([
+    request(app).post(`/api/loans/${issued.body.id}/return`),
+    request(app).post(`/api/loans/${issued.body.id}/return`),
+  ]);
+  expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+  expect(responses.find((response) => response.status === 409).body.error.code).toBe('LOAN_ALREADY_RETURNED');
+  const winner = responses.find((response) => response.status === 200).body;
+  const stored = (await pool.query('SELECT returned_at FROM loans WHERE id = $1', [issued.body.id])).rows[0];
+  expect(stored.returned_at.toISOString()).toBe(winner.returnedAt);
+  expect((await request(app).get(`/api/books/${data.bookId}`)).body.availableCopies).toBe(1);
+});
+
+it('uses a changed decimal FINE_PER_DAY and rounds only the final NUMERIC amount', async () => {
+  vi.stubEnv('FINE_PER_DAY', '2.555');
+  const data = await createFixtures();
+  const issued = await request(app).post('/api/loans').send(data).expect(201);
+  await pool.query("UPDATE loans SET due_date = (clock_timestamp() AT TIME ZONE 'UTC')::date - 3 WHERE id = $1", [issued.body.id]);
+  const response = await request(app).post(`/api/loans/${issued.body.id}/return`);
+  expect(response.status).toBe(200);
+  expect(response.body.fineAmount).toBe('7.67');
+  expect((await pool.query('SELECT fine_amount::text FROM loans WHERE id = $1', [issued.body.id])).rows[0].fine_amount).toBe('7.67');
 });
