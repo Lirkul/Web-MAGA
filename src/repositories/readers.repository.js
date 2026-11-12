@@ -14,6 +14,11 @@ export async function findReaderById(id) {
   return rows[0];
 }
 
+export async function lockReaderById(id, client) {
+  const { rows } = await client.query('SELECT id, status FROM readers WHERE id = $1 FOR SHARE', [id]);
+  return rows[0];
+}
+
 export async function findReaders({ search, status, page, limit }) {
   const conditions = [];
   const values = [];

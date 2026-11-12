@@ -1,9 +1,11 @@
 import { z } from 'zod';
 
+export const positiveIntegerValue = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+
 export const positiveInteger = z.string()
   .regex(/^\d+$/, 'Ожидается положительное целое число')
   .transform(Number)
-  .pipe(z.number().int().positive().max(Number.MAX_SAFE_INTEGER));
+  .pipe(positiveIntegerValue);
 
 export function paginatedQuerySchema(filters) {
   return z.object({

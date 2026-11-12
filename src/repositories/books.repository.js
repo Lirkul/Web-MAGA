@@ -47,7 +47,7 @@ export async function findBooks({ search, isbnSearch, genre, page, limit }) {
 }
 
 export async function lockBookById(id, client) {
-  const { rows } = await client.query('SELECT id FROM books WHERE id = $1 FOR UPDATE', [id]);
+  const { rows } = await client.query('SELECT id, total_copies FROM books WHERE id = $1 FOR UPDATE', [id]);
   return rows[0];
 }
 
