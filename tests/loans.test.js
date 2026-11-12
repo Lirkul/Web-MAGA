@@ -276,11 +276,6 @@ it('sees a reader block committed while its FOR SHARE is waiting', async () => {
   }
 }, 10000);
 
-it('does not expose loan listing endpoints', async () => {
-  expect((await request(app).get('/api/loans')).status).toBe(404);
-  expect((await request(app).get('/api/loans/1')).status).toBe(404);
-});
-
 it('returns an on-time loan with no fine, even for a blocked reader', async () => {
   vi.stubEnv('FINE_PER_DAY', undefined);
   const data = await createFixtures();
@@ -364,4 +359,114 @@ it('uses a changed decimal FINE_PER_DAY and rounds only the final NUMERIC amount
   expect(response.status).toBe(200);
   expect(response.body.fineAmount).toBe('7.67');
   expect((await pool.query('SELECT fine_amount::text FROM loans WHERE id = $1', [issued.body.id])).rows[0].fine_amount).toBe('7.67');
+});
+
+async function createHistory() {
+  const first = await createFixtures(5);
+  const secondReader = await createReader();
+  const secondBook = await request(app).post('/api/books').send({
+    title: 'Second book', authors: ['Author'], isbn: '9780201616224', totalCopies: 1,
+  }).expect(201);
+  const loans = [];
+  for (const data of [
+    first,
+    { bookId: first.bookId, readerId: secondReader.id },
+    { bookId: secondBook.body.id, readerId: first.readerId },
+    first,
+  ]) {
+    const issued = await request(app).post('/api/loans').send(data).expect(201);
+    loans.push(issued.body);
+  }
+  const { rows } = await pool.query(`
+    UPDATE loans SET due_date = (clock_timestamp() AT TIME ZONE 'UTC')::date - 2
+    WHERE id = $1 RETURNING to_char(due_date, 'YYYY-MM-DD') AS due_date
+  `, [loans[0].id]);
+  loans[0].dueDate = rows[0].due_date;
+  await pool.query("UPDATE loans SET status = 'overdue' WHERE id = $1", [loans[1].id]);
+  loans[1].status = 'overdue';
+  loans[2] = (await request(app).post(`/api/loans/${loans[2].id}/return`).expect(200)).body;
+  return loans;
+}
+
+it('lists loan history in id order with defaults and supports an empty library', async () => {
+  const empty = await request(app).get('/api/loans').expect(200);
+  expect(empty.body).toEqual({ data: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 0 } });
+  const loans = await createHistory();
+  const response = await request(app).get('/api/loans').expect(200);
+  expect(response.body).toEqual({ data: loans, pagination: { page: 1, limit: 10, total: 4, totalPages: 1 } });
+});
+
+it('filters history by reader and book separately and together with status', async () => {
+  const loans = await createHistory();
+  for (const filters of [
+    { readerId: loans[0].readerId },
+    { bookId: loans[0].bookId },
+    { readerId: loans[0].readerId, bookId: loans[0].bookId },
+    { readerId: loans[0].readerId, bookId: loans[0].bookId, status: 'active' },
+    { readerId: loans[1].readerId, bookId: loans[2].bookId },
+    { readerId: 999999 }, { bookId: 999999 },
+  ]) {
+    const expected = loans.filter((loan) => Object.entries(filters).every(([key, value]) => loan[key] === value));
+    const response = await request(app).get('/api/loans').query(filters).expect(200);
+    expect(response.body).toEqual({
+      data: expected, pagination: { page: 1, limit: 10, total: expected.length, totalPages: expected.length ? 1 : 0 },
+    });
+  }
+});
+
+it('filters by each stored status without marking past-due active loans overdue', async () => {
+  const loans = await createHistory();
+  const before = (await pool.query('SELECT * FROM loans ORDER BY id')).rows;
+  for (const status of ['active', 'overdue', 'returned']) {
+    const response = await request(app).get('/api/loans').query({ status }).expect(200);
+    const expected = loans.filter((loan) => loan.status === status);
+    expect(response.body.data).toEqual(expected);
+    expect(response.body.pagination.total).toBe(expected.length);
+  }
+  expect((await pool.query('SELECT * FROM loans ORDER BY id')).rows).toEqual(before);
+});
+
+it('paginates in PostgreSQL with stable ordering and filtered totals', async () => {
+  const loans = await createHistory();
+  for (const page of [1, 2, 3]) {
+    const response = await request(app).get('/api/loans').query({ page, limit: 2 }).expect(200);
+    expect(response.body).toEqual({
+      data: loans.slice((page - 1) * 2, page * 2), pagination: { page, limit: 2, total: 4, totalPages: 2 },
+    });
+  }
+  const filtered = await request(app).get('/api/loans')
+    .query({ readerId: loans[0].readerId, page: 2, limit: 2 }).expect(200);
+  expect(filtered.body).toEqual({ data: [loans[3]], pagination: { page: 2, limit: 2, total: 3, totalPages: 2 } });
+  const maximum = await request(app).get('/api/loans?limit=100').expect(200);
+  expect(maximum.body).toEqual({ data: loans, pagination: { page: 1, limit: 100, total: 4, totalPages: 1 } });
+});
+
+it('gets individual active and returned loans preserving dates and decimal strings', async () => {
+  const loans = await createHistory();
+  for (const loan of [loans[0], loans[2]]) {
+    const response = await request(app).get(`/api/loans/${loan.id}`).expect(200);
+    expect(response.body).toEqual(loan);
+    expect(response.body.fineAmount).toMatch(/^\d+\.\d{2}$/);
+    expect(response.body.dueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(response.body.loanedAt).toBe(new Date(loan.loanedAt).toISOString());
+  }
+});
+
+it('returns 404 for a missing loan and 400 for invalid ids, filters and pagination', async () => {
+  const missing = await request(app).get('/api/loans/999999').expect(404);
+  expect(missing.body).toEqual({ error: { code: 'LOAN_NOT_FOUND', message: 'Выдача не найдена', details: [] } });
+  for (const id of ['0', '-1', '1.5', 'abc', '9007199254740992']) {
+    const response = await request(app).get(`/api/loans/${id}`).expect(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  }
+  for (const queryString of [
+    'readerId=0', 'readerId=abc', 'readerId=1&readerId=2', 'bookId=-1', 'bookId=1.5',
+    'bookId=9007199254740992', 'status=blocked', 'status=', 'status=active&status=overdue',
+    'page=0', 'page=1.5', 'page=abc', 'page=9007199254740991&limit=100',
+    'limit=0', 'limit=101', 'limit=1.5', 'limit=', 'unknown=value', "readerId=1%20OR%201=1",
+  ]) {
+    const response = await request(app).get(`/api/loans?${queryString}`).expect(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(response.body.error.details.length).toBeGreaterThan(0);
+  }
 });

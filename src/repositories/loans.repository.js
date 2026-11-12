@@ -1,6 +1,31 @@
+import { pool } from '../db/pool.js';
+
 const loanColumns = `id, book_id, reader_id, loaned_at,
   to_char(due_date, 'YYYY-MM-DD') AS due_date,
   returned_at, status, fine_amount::text AS fine_amount, created_at`;
+
+export async function findLoanById(id) {
+  const { rows } = await pool.query(`SELECT ${loanColumns} FROM loans WHERE id = $1`, [id]);
+  return rows[0];
+}
+
+export async function findLoans({ readerId, bookId, status, page, limit }) {
+  const conditions = [];
+  const values = [];
+  for (const [column, value] of [['reader_id', readerId], ['book_id', bookId], ['status', status]]) {
+    if (value !== undefined) {
+      values.push(value);
+      conditions.push(`${column} = $${values.length}`);
+    }
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const countResult = await pool.query(`SELECT COUNT(*) AS total FROM loans ${where}`, values);
+  const { rows } = await pool.query(`
+    SELECT ${loanColumns} FROM loans ${where} ORDER BY id ASC
+    LIMIT $${values.length + 1} OFFSET $${values.length + 2}
+  `, [...values, limit, (page - 1) * limit]);
+  return { rows, total: Number(countResult.rows[0].total) };
+}
 
 export async function insertLoan({ bookId, readerId }, client) {
   const { rows } = await client.query(`

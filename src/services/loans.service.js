@@ -19,6 +19,22 @@ function toLoan(row) {
   };
 }
 
+export async function listLoans(query) {
+  const { rows, total } = await loansRepository.findLoans(query);
+  return {
+    data: rows.map(toLoan),
+    pagination: {
+      page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit),
+    },
+  };
+}
+
+export async function getLoanById(id) {
+  const row = await loansRepository.findLoanById(id);
+  if (!row) throw new ApiError(404, 'LOAN_NOT_FOUND', 'Выдача не найдена');
+  return toLoan(row);
+}
+
 export async function createLoan(data) {
   const client = await pool.connect();
   try {

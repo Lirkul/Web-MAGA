@@ -1,5 +1,13 @@
 import * as loansService from '../services/loans.service.js';
 
+export async function listLoans(req, res) {
+  res.json(await loansService.listLoans(req.validated.query));
+}
+
+export async function getLoanById(req, res) {
+  res.json(await loansService.getLoanById(req.validated.params.id));
+}
+
 export async function createLoan(req, res) {
   res.status(201).json(await loansService.createLoan(req.validated.body));
 }
