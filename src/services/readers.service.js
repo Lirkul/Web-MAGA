@@ -58,3 +58,18 @@ export async function updateReader(id, data) {
     throw mapUniqueConflict(error);
   }
 }
+
+export async function deleteReader(id) {
+  await getReaderById(id);
+  const historyError = () => new ApiError(409, 'READER_HAS_LOANS', 'Невозможно удалить читателя, имеющего историю выдач');
+  if (await readersRepository.hasReaderLoans(id)) throw historyError();
+  try {
+    if (!await readersRepository.deleteReaderById(id)) {
+      throw new ApiError(404, 'READER_NOT_FOUND', 'Читатель не найден');
+    }
+  } catch (error) {
+    // Ограничение БД защищает и от выдачи, возникшей после проверки истории.
+    if (error.code === '23503' && error.constraint === 'loans_reader_id_fkey') throw historyError();
+    throw error;
+  }
+}

@@ -12,7 +12,7 @@ it('serves Swagger UI and its local stylesheet through /docs', async () => {
   await request(app).get('/docs/swagger-ui.css').expect(200).expect('Content-Type', /css/);
 });
 
-it('publishes OpenAPI 3.0 with all seventeen existing API operations and five groups', async () => {
+it('publishes OpenAPI 3.0 with all eighteen API operations and five groups', async () => {
   const { body } = await request(app).get('/docs/openapi.json').expect(200);
   expect(body.openapi).toBe('3.0.3');
   expect(body.tags.map((tag) => tag.name)).toEqual(['Books', 'Readers', 'Loans', 'Statistics', 'Health']);
@@ -21,9 +21,9 @@ it('publishes OpenAPI 3.0 with all seventeen existing API operations and five gr
   expect(operations.sort()).toEqual([
     'POST /api/books', 'GET /api/books', 'POST /api/books/import',
     'GET /api/books/{id}', 'PATCH /api/books/{id}', 'DELETE /api/books/{id}',
-    'POST /api/readers', 'GET /api/readers', 'GET /api/readers/{id}', 'PATCH /api/readers/{id}',
+    'POST /api/readers', 'GET /api/readers', 'GET /api/readers/{id}', 'PATCH /api/readers/{id}', 'DELETE /api/readers/{id}',
     'POST /api/loans', 'GET /api/loans', 'GET /api/loans/{id}', 'POST /api/loans/{id}/return',
-    'GET /api/stats/top-books', 'GET /api/stats/overdue-readers', 'GET /api/health',
+    'GET /api/statistics/top-books', 'GET /api/statistics/overdue-readers', 'GET /api/health',
   ].sort());
 });
 

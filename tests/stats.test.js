@@ -76,16 +76,34 @@ function topBook(book, loansCount) {
 function overdueReader(reader, overdueLoansCount, maxDaysOverdue) {
   const date = new Date(`${today}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() - maxDaysOverdue);
-  return {
+  return expect.objectContaining({
     readerId: Number(reader.id), fullName: reader.full_name, email: reader.email,
     registrationNumber: reader.registration_number, status: reader.status,
     overdueLoansCount, oldestDueDate: date.toISOString().slice(0, 10), maxDaysOverdue,
-  };
+  });
 }
 
 const period = { from: '2026-01-01', to: '2026-01-31' };
 
-it('returns at most five books ordered by all loan counts then book id, including repeated and returned loans', async () => {
+it('includes every overdue book and its calendar days while preserving the reader summary', async () => {
+  const reader = await createReader();
+  const first = await createBook('Первая книга');
+  const second = await createBook('Вторая книга');
+  await createLoan(first, reader, { dueOffset: -3 });
+  await createLoan(second, reader, { dueOffset: -1 });
+  await createLoan(second, reader, { dueOffset: -10, returned: true, status: 'returned' });
+  const history = (await request(app).get('/api/loans').expect(200)).body.data;
+  const response = await request(app).get('/api/statistics/overdue-readers').expect(200);
+  expect(response.body.data).toHaveLength(1);
+  expect(response.body.data[0]).toMatchObject({ readerId: Number(reader.id), overdueLoansCount: 2, maxDaysOverdue: 3 });
+  expect(response.body.data[0].overdueLoans).toEqual([
+    { loanId: history[0].id, bookId: Number(first.id), title: first.title, dueDate: history[0].dueDate, daysOverdue: 3 },
+    { loanId: history[1].id, bookId: Number(second.id), title: second.title, dueDate: history[1].dueDate, daysOverdue: 1 },
+  ]);
+  expect((await request(app).get('/api/stats/overdue-readers').expect(200)).body).toEqual(response.body);
+});
+
+it('returns five books ordered by loan count then title through both statistics addresses', async () => {
   const reader = await createReader();
   const books = [];
   const counts = [4, 4, 6, 3, 2, 1, 1, 0];
@@ -96,10 +114,11 @@ it('returns at most five books ordered by all loan counts then book id, includin
       await createLoan(book, reader, { returned: j % 2 === 0, status: j % 2 === 0 ? 'returned' : 'active' });
     }
   }
-  const response = await request(app).get('/api/stats/top-books').query(period).expect(200);
+  const response = await request(app).get('/api/statistics/top-books').query(period).expect(200);
   expect(response.body).toEqual({
-    period, data: [topBook(books[2], 6), topBook(books[0], 4), topBook(books[1], 4), topBook(books[3], 3), topBook(books[4], 2)],
+    period, data: [topBook(books[2], 6), topBook(books[1], 4), topBook(books[0], 4), topBook(books[3], 3), topBook(books[4], 2)],
   });
+  expect((await request(app).get('/api/stats/top-books').query(period).expect(200)).body).toEqual(response.body);
 });
 
 it('uses inclusive UTC calendar bounds including the final microsecond, and supports an empty period', async () => {

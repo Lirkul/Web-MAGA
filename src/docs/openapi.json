@@ -118,6 +118,17 @@
       }
     },
     "/api/readers/{id}": {
+      "delete": {
+        "tags": ["Readers"], "summary": "Удалить читателя без истории выдач",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "204": { "description": "Читатель удалён, тело ответа отсутствует" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
       "get": {
         "tags": ["Readers"], "summary": "Получить читателя по ID",
         "parameters": [{ "$ref": "#/components/parameters/Id" }],
@@ -147,7 +158,8 @@
         "requestBody": { "required": true, "content": { "application/json": { "schema": {
           "type": "object", "required": ["bookId", "readerId"], "additionalProperties": false,
           "properties": {
-            "bookId": { "type": "integer", "minimum": 1 }, "readerId": { "type": "integer", "minimum": 1 }
+            "bookId": { "type": "integer", "minimum": 1 }, "readerId": { "type": "integer", "minimum": 1 },
+            "dueDate": { "type": "string", "format": "date", "description": "Необязательно; позже даты выдачи в UTC. Без поля используется DEFAULT_LOAN_DAYS (14)." }
           }, "example": { "bookId": 1, "readerId": 1 }
         } } } },
         "responses": {
@@ -202,9 +214,10 @@
         }
       }
     },
-    "/api/stats/top-books": {
+    "/api/statistics/top-books": {
       "get": {
         "tags": ["Statistics"], "summary": "Получить топ-5 книг за период",
+        "description": "По числу выдач, затем по названию. Совместимый адрес: /api/stats/top-books.",
         "parameters": [
           { "name": "from", "in": "query", "required": true, "schema": { "type": "string", "format": "date" }, "example": "2026-11-01" },
           { "name": "to", "in": "query", "required": true, "schema": { "type": "string", "format": "date" }, "example": "2026-11-30" }
@@ -219,13 +232,19 @@
         }
       }
     },
-    "/api/stats/overdue-readers": {
+    "/api/statistics/overdue-readers": {
       "get": {
         "tags": ["Statistics"], "summary": "Получить читателей с текущими просрочками",
+        "description": "Сводка и просроченные книги каждого читателя. Совместимый адрес: /api/stats/overdue-readers.",
         "parameters": [{ "$ref": "#/components/parameters/Page" }, { "$ref": "#/components/parameters/Limit" }],
         "responses": {
           "200": { "description": "Читатели с просрочками", "content": { "application/json": { "example": {
-            "data": [{ "readerId": 1, "fullName": "Иван Иванов", "email": "ivan@example.com", "registrationNumber": "R-001", "status": "active", "overdueLoansCount": 2, "oldestDueDate": "2026-11-15", "maxDaysOverdue": 3 }],
+            "data": [{ "readerId": 1, "fullName": "Иван Иванов", "email": "ivan@example.com", "registrationNumber": "R-001", "status": "active", "overdueLoansCount": 2, "oldestDueDate": "2026-11-15", "maxDaysOverdue": 3,
+              "overdueLoans": [
+                { "loanId": 1, "bookId": 1, "title": "Чистый код", "dueDate": "2026-11-15", "daysOverdue": 3 },
+                { "loanId": 2, "bookId": 2, "title": "Совершенный код", "dueDate": "2026-11-17", "daysOverdue": 1 }
+              ]
+            }],
             "pagination": { "page": 1, "limit": 10, "total": 1, "totalPages": 1 }
           } } } },
           "400": { "$ref": "#/components/responses/BadRequest" },

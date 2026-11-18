@@ -9,5 +9,6 @@ router.post('/', validate(createReaderSchema), controller.createReader);
 router.get('/', validate(listReadersSchema, 'query'), controller.listReaders);
 router.get('/:id', validate(readerIdSchema, 'params'), controller.getReaderById);
 router.patch('/:id', validate(readerIdSchema, 'params'), validate(updateReaderSchema), controller.updateReader);
+router.delete('/:id', validate(readerIdSchema, 'params'), controller.deleteReader);
 
 export default router;

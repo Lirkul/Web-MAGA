@@ -31,6 +31,7 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/books', booksRoutes);
 app.use('/api/readers', readersRoutes);
 app.use('/api/loans', loansRoutes);
+app.use('/api/statistics', statsRoutes);
 app.use('/api/stats', statsRoutes);
 
 app.use((req, res, next) => {

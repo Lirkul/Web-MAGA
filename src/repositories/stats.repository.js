@@ -7,19 +7,24 @@ export async function findTopBooks({ from, to }) {
     WHERE l.loaned_at >= ($1::date::timestamp AT TIME ZONE 'UTC')
       AND l.loaned_at < (($2::date + 1)::timestamp AT TIME ZONE 'UTC')
     GROUP BY b.id
-    ORDER BY loans_count DESC, b.id ASC
+    ORDER BY loans_count DESC, b.title ASC, b.id ASC
     LIMIT 5
   `, [from, to]);
   return rows;
 }
 
 const overdueReadersSummary = `
-  SELECT reader_id, COUNT(*) AS overdue_loans_count,
-    MIN(due_date) AS oldest_due_date,
-    (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date - MIN(due_date) AS max_days_overdue
-  FROM loans
-  WHERE returned_at IS NULL AND due_date < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
-  GROUP BY reader_id
+  SELECT l.reader_id, COUNT(*) AS overdue_loans_count,
+    MIN(l.due_date) AS oldest_due_date,
+    (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date - MIN(l.due_date) AS max_days_overdue,
+    jsonb_agg(jsonb_build_object(
+      'loanId', l.id, 'bookId', b.id, 'title', b.title,
+      'dueDate', to_char(l.due_date, 'YYYY-MM-DD'),
+      'daysOverdue', (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date - l.due_date
+    ) ORDER BY l.due_date, l.id) AS overdue_loans
+  FROM loans l JOIN books b ON b.id = l.book_id
+  WHERE l.returned_at IS NULL AND l.due_date < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
+  GROUP BY l.reader_id
 `;
 
 export async function findOverdueReaders({ page, limit }) {
@@ -30,7 +35,7 @@ export async function findOverdueReaders({ page, limit }) {
     SELECT r.id AS reader_id, r.full_name, r.email, r.registration_number, r.status,
       overdue.overdue_loans_count,
       to_char(overdue.oldest_due_date, 'YYYY-MM-DD') AS oldest_due_date,
-      overdue.max_days_overdue
+      overdue.max_days_overdue, overdue.overdue_loans
     FROM (${overdueReadersSummary}) overdue
     JOIN readers r ON r.id = overdue.reader_id
     ORDER BY overdue.overdue_loans_count DESC, overdue.max_days_overdue DESC, r.id ASC

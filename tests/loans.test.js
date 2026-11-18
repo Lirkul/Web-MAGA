@@ -119,7 +119,7 @@ it.each([{}, { bookId: 1 }, { readerId: 1 }])('rejects missing loan identifiers 
 });
 
 it.each([
-  { status: 'active' }, { dueDate: '2026-11-26' }, { loanedAt: '2026-11-12T10:00:00Z' },
+  { status: 'active' }, { loanedAt: '2026-11-12T10:00:00Z' },
   { fineAmount: '0.00' }, { returnedAt: null }, { id: 1 }, { createdAt: '2026-11-12' }, { extra: true },
 ])('rejects client-controlled loan fields %j', async (fields) => {
   const response = await request(app).post('/api/loans').send({ bookId: 1, readerId: 1, ...fields });
@@ -148,6 +148,26 @@ it('rejects a blocked reader without creating a loan', async () => {
   expect(response.body).toEqual({ error: { code: 'READER_BLOCKED', message: 'Выдача книг заблокированному читателю запрещена', details: [] } });
   expect(await loanCount()).toBe(0);
   expect(pool.idleCount).toBe(pool.totalCount);
+});
+
+it('uses DEFAULT_LOAN_DAYS and accepts only custom due dates after the actual UTC issuance day', async () => {
+  vi.stubEnv('DEFAULT_LOAN_DAYS', '7');
+  const data = await createFixtures();
+  const issued = (await request(app).post('/api/loans').send(data).expect(201)).body;
+  const expected = new Date(issued.loanedAt);
+  expected.setUTCDate(expected.getUTCDate() + 7);
+  expect(issued.dueDate).toBe(expected.toISOString().slice(0, 10));
+  await request(app).post(`/api/loans/${issued.id}/return`).expect(200);
+  const { rows: [dates] } = await pool.query(`
+    SELECT to_char((clock_timestamp() AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS today,
+      to_char((clock_timestamp() AT TIME ZONE 'UTC')::date + 1, 'YYYY-MM-DD') AS tomorrow
+  `);
+  for (const dueDate of [dates.today, '2000-01-01', '2026-02-30', '0000-01-01', '', null]) {
+    await request(app).post('/api/loans').send({ ...data, dueDate }).expect(400);
+  }
+  const custom = await request(app).post('/api/loans').send({ ...data, dueDate: dates.tomorrow }).expect(201);
+  expect(custom.body.dueDate).toBe(dates.tomorrow);
+  expect(await loanCount()).toBe(2);
 });
 
 it('rejects a book with zero copies', async () => {

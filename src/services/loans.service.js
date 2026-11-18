@@ -1,6 +1,7 @@
 import { pool } from '../db/pool.js';
 import { ApiError } from '../errors/ApiError.js';
 import { getFinePerDay } from '../config/fine.js';
+import { getDefaultLoanDays } from '../config/loans.js';
 import * as booksRepository from '../repositories/books.repository.js';
 import * as readersRepository from '../repositories/readers.repository.js';
 import * as loansRepository from '../repositories/loans.repository.js';
@@ -40,6 +41,7 @@ export async function getLoanById(id) {
 }
 
 export async function createLoan(data) {
+  const defaultLoanDays = getDefaultLoanDays();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -55,7 +57,10 @@ export async function createLoan(data) {
     if (book.total_copies <= unreturned) {
       throw new ApiError(409, 'BOOK_UNAVAILABLE', 'Нет доступных экземпляров книги');
     }
-    const loan = await loansRepository.insertLoan(data, client);
+    const loan = await loansRepository.insertLoan({ ...data, defaultLoanDays }, client);
+    if (!loan) {
+      throw new ApiError(400, 'INVALID_DUE_DATE', 'Срок возврата должен быть позже даты выдачи в UTC');
+    }
     await client.query('COMMIT');
     return toLoan(loan);
   } catch (error) {

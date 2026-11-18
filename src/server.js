@@ -1,9 +1,11 @@
 import app from './app.js';
 import { getFinePerDay } from './config/fine.js';
+import { getDefaultLoanDays } from './config/loans.js';
 import { pool } from './db/pool.js';
 import { startOverdueJob } from './jobs/overdue.job.js';
 
 getFinePerDay();
+getDefaultLoanDays();
 const port = Number(process.env.PORT || 3000);
 const overdueJob = process.env.NODE_ENV === 'test' ? null : startOverdueJob();
 

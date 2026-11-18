@@ -19,6 +19,7 @@ export async function getOverdueReaders(query) {
       registrationNumber: row.registration_number, status: row.status,
       overdueLoansCount: Number(row.overdue_loans_count), oldestDueDate: row.oldest_due_date,
       maxDaysOverdue: Number(row.max_days_overdue),
+      overdueLoans: row.overdue_loans,
     })),
     pagination: {
       page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit),

@@ -36,14 +36,15 @@ export async function findLoans({ readerId, bookId, status, page, limit }) {
   return { rows, total: Number(countResult.rows[0].total) };
 }
 
-export async function insertLoan({ bookId, readerId }, client) {
+export async function insertLoan({ bookId, readerId, dueDate, defaultLoanDays }, client) {
   const { rows } = await client.query(`
     WITH issuance AS MATERIALIZED (SELECT clock_timestamp() AS loaned_at)
     INSERT INTO loans (book_id, reader_id, loaned_at, due_date)
-    SELECT $1, $2, loaned_at, (loaned_at AT TIME ZONE 'UTC')::date + 14
+    SELECT $1, $2, loaned_at, COALESCE($3::date, (loaned_at AT TIME ZONE 'UTC')::date + $4::integer)
     FROM issuance
+    WHERE $3::date IS NULL OR $3::date > (loaned_at AT TIME ZONE 'UTC')::date
     RETURNING ${loanColumns}
-  `, [bookId, readerId]);
+  `, [bookId, readerId, dueDate ?? null, defaultLoanDays]);
   return rows[0];
 }
 

@@ -9,6 +9,7 @@
     "dev": "node --env-file-if-exists=.env --watch src/server.js",
     "db": "node --env-file-if-exists=.env src/db/run-migrations.js",
     "db:migrate": "npm run db",
+    "db:seed": "node --env-file-if-exists=.env src/db/run-seed.js",
     "loans:check-overdue": "node --env-file-if-exists=.env src/jobs/check-overdue.js",
     "overdue:check": "npm run loans:check-overdue",
     "test": "vitest run"

@@ -277,11 +277,31 @@ it('blocking and unblocking leave existing loans untouched and omit history from
   }
 });
 
-it('does not expose reader DELETE or separate block/unblock endpoints', async () => {
+it('does not expose separate block/unblock endpoints', async () => {
   const reader = await createReader();
-  expect((await request(app).delete(`/api/readers/${reader.id}`)).status).toBe(404);
   for (const action of ['block', 'unblock']) {
     expect((await request(app).post(`/api/readers/${reader.id}/${action}`)).status).toBe(404);
   }
   expect((await request(app).get(`/api/readers/${reader.id}`)).body).toEqual(reader);
+});
+
+it('DELETE removes an unused reader, validates IDs and returns 404 after removal', async () => {
+  const reader = await createReader();
+  await request(app).delete('/api/readers/0').expect(400);
+  await request(app).delete(`/api/readers/${reader.id}`).expect(204, '');
+  await request(app).get(`/api/readers/${reader.id}`).expect(404);
+  expect((await request(app).delete(`/api/readers/${reader.id}`).expect(404)).body.error.code).toBe('READER_NOT_FOUND');
+});
+
+it('DELETE preserves the reader and every active or returned loan in their history', async () => {
+  const reader = await createReader();
+  const { rows: [book] } = await pool.query("INSERT INTO books (title, authors, isbn) VALUES ('Test', ARRAY['Author'], '9780132350884') RETURNING id");
+  await pool.query('INSERT INTO loans (book_id, reader_id, due_date) VALUES ($1, $2, CURRENT_DATE + 14)', [book.id, reader.id]);
+  for (const status of ['active', 'returned']) {
+    await pool.query("UPDATE loans SET status = $1, returned_at = CASE WHEN $1 = 'returned' THEN NOW() ELSE NULL END", [status]);
+    const response = await request(app).delete(`/api/readers/${reader.id}`).expect(409);
+    expect(response.body.error.code).toBe('READER_HAS_LOANS');
+    expect((await request(app).get(`/api/readers/${reader.id}`).expect(200)).body).toEqual(reader);
+    expect((await request(app).get('/api/loans').expect(200)).body.data).toMatchObject([{ readerId: reader.id, status }]);
+  }
 });

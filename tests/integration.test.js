@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import pg from 'pg';
 import request from 'supertest';
 import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -73,6 +76,19 @@ afterAll(async () => { await admin.end(); });
 const bookData = { title: 'Чистый код', authors: ['Роберт Мартин'], isbn: '9780132350884', totalCopies: 1 };
 const readerData = { fullName: 'Иван Иванов', email: 'reader@example.com', registrationNumber: 'TEST-001' };
 const header = 'title,authors,isbn,publicationYear,genre,totalCopies\n';
+
+it('seeds demo books and a reader twice without duplicates or overwritten data', async () => {
+  const script = fileURLToPath(new URL('../src/db/run-seed.js', import.meta.url));
+  const run = () => promisify(execFile)(process.execPath, [script], { env: { ...process.env }, timeout: 5000 });
+  await run();
+  const books = (await request(app).get('/api/books').expect(200)).body.data;
+  const readers = (await request(app).get('/api/readers').expect(200)).body.data;
+  expect(books.map((book) => book.isbn).sort()).toEqual(['9780132350884', '9780735619678']);
+  expect(readers).toMatchObject([{ registrationNumber: 'DEMO-001', status: 'active' }]);
+  await run();
+  expect((await request(app).get('/api/books').expect(200)).body.data).toEqual(books);
+  expect((await request(app).get('/api/readers').expect(200)).body.data).toEqual(readers);
+}, 15000);
 
 async function createBook(data = {}) {
   return (await request(app).post('/api/books').send({ ...bookData, ...data }).expect(201)).body;

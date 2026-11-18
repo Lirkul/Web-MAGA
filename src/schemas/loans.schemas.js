@@ -4,6 +4,8 @@ import { paginatedQuerySchema, positiveInteger, positiveIntegerValue } from './c
 export const createLoanSchema = z.object({
   bookId: positiveIntegerValue,
   readerId: positiveIntegerValue,
+  dueDate: z.iso.date({ error: 'Ожидается календарная дата YYYY-MM-DD' })
+    .refine((value) => !value.startsWith('0000-'), 'Год должен быть не меньше 0001').optional(),
 }).strict();
 
 export const loanIdSchema = z.object({ id: positiveInteger }).strict();

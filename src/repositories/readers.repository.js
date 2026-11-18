@@ -54,3 +54,13 @@ export async function updateReaderFields(id, data) {
   `, values);
   return rows[0];
 }
+
+export async function hasReaderLoans(id) {
+  const { rows } = await pool.query('SELECT EXISTS (SELECT 1 FROM loans WHERE reader_id = $1) AS has_loans', [id]);
+  return rows[0].has_loans;
+}
+
+export async function deleteReaderById(id) {
+  const { rows } = await pool.query('DELETE FROM readers WHERE id = $1 RETURNING id', [id]);
+  return rows[0];
+}

@@ -15,3 +15,8 @@ export async function getReaderById(req, res) {
 export async function updateReader(req, res) {
   res.json(await readersService.updateReader(req.validated.params.id, req.validated.body));
 }
+
+export async function deleteReader(req, res) {
+  await readersService.deleteReader(req.validated.params.id);
+  res.status(204).end();
+}
