@@ -1,6 +1,48 @@
 import { ApiError } from '../errors/ApiError.js';
 import { pool } from '../db/pool.js';
 import * as booksRepository from '../repositories/books.repository.js';
+import { createBookSchema } from '../schemas/books.schemas.js';
+import { readBooksCsv } from './booksCsv.js';
+
+export async function importBooks(path, signal) {
+  const result = { processed: 0, imported: 0, duplicates: 0, invalid: 0, errors: [] };
+  const skipInvalid = (row, message) => {
+    result.invalid++;
+    if (result.errors.length < 20) result.errors.push({ row, message });
+  };
+  try {
+    await readBooksCsv(path, async (record, row, csvError) => {
+      result.processed++;
+      if (csvError) {
+        skipInvalid(row, csvError);
+        return;
+      }
+      const parsed = createBookSchema.safeParse({
+        title: record.title,
+        authors: record.authors.split('|'),
+        isbn: record.isbn,
+        publicationYear: record.publicationYear === '' ? undefined : Number(record.publicationYear),
+        genre: record.genre || undefined,
+        totalCopies: Number(record.totalCopies),
+      });
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        skipInvalid(row, `${issue.path.join('.')}: ${issue.message}`);
+        return;
+      }
+      if (await booksRepository.insertImportedBook(parsed.data)) result.imported++;
+      else result.duplicates++;
+    }, signal);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new ApiError(error.status, error.code,
+        `${error.message}. Уже импортированные книги сохранены.`,
+        [result, ...error.details]);
+    }
+    throw error;
+  }
+  return result;
+}
 
 function toBook(row) {
   return {

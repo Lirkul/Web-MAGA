@@ -7,6 +7,7 @@ const router = Router();
 
 router.post('/', validate(createBookSchema), controller.createBook);
 router.get('/', validate(listBooksSchema, 'query'), controller.listBooks);
+router.post('/import', controller.importBooks);
 router.get('/:id', validate(bookIdSchema, 'params'), controller.getBookById);
 router.patch('/:id', validate(bookIdSchema, 'params'), validate(updateBookSchema), controller.updateBook);
 router.delete('/:id', validate(bookIdSchema, 'params'), controller.deleteBook);

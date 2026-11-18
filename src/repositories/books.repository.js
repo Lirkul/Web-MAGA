@@ -16,6 +16,15 @@ export async function insertBook({ title, authors, isbn, publicationYear, genre,
   return rows[0];
 }
 
+export async function insertImportedBook({ title, authors, isbn, publicationYear, genre, totalCopies }) {
+  const { rowCount } = await pool.query(`
+    INSERT INTO books (title, authors, isbn, publication_year, genre, total_copies)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (isbn) DO NOTHING
+  `, [title, authors, isbn, publicationYear ?? null, genre ?? null, totalCopies]);
+  return rowCount === 1;
+}
+
 export async function findBookById(id, client = pool) {
   const { rows } = await client.query(`${selectBooks} WHERE b.id = $1 GROUP BY b.id`, [id]);
   return rows[0];

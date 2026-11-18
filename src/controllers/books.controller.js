@@ -1,4 +1,17 @@
 import * as booksService from '../services/books.service.js';
+import { withCsvUpload } from '../middlewares/csvUpload.js';
+
+export async function importBooks(req, res) {
+  const cancellation = new AbortController();
+  const onClose = () => { if (!res.writableEnded) cancellation.abort(); };
+  res.once('close', onClose);
+  try {
+    res.json(await withCsvUpload(req,
+      (path) => booksService.importBooks(path, cancellation.signal), cancellation.signal));
+  } finally {
+    res.off('close', onClose);
+  }
+}
 
 export async function createBook(req, res) {
   res.status(201).json(await booksService.createBook(req.validated.body));
