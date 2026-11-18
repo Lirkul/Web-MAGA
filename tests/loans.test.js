@@ -362,6 +362,23 @@ it('uses a changed decimal FINE_PER_DAY and rounds only the final NUMERIC amount
   expect((await pool.query('SELECT fine_amount::text FROM loans WHERE id = $1', [issued.body.id])).rows[0].fine_amount).toBe('7.67');
 });
 
+it.each([
+  [0, '10', '0.00'],
+  [-1, '10', '10.00'],
+  [-2, '0', '0.00'],
+])('returns a loan due at UTC day offset %i with daily rate %s and fine %s', async (offset, rate, fine) => {
+  vi.stubEnv('FINE_PER_DAY', rate);
+  const data = await createFixtures();
+  const issued = await request(app).post('/api/loans').send(data).expect(201);
+  await pool.query(`
+    UPDATE loans SET due_date = (clock_timestamp() AT TIME ZONE 'UTC')::date + $2::integer WHERE id = $1
+  `, [issued.body.id, offset]);
+  const returned = await request(app).post(`/api/loans/${issued.body.id}/return`).expect(200);
+  expect(returned.body).toMatchObject({ status: 'returned', returnedAt: expect.any(String), fineAmount: fine });
+  expect((await request(app).get(`/api/loans/${issued.body.id}`).expect(200)).body).toEqual(returned.body);
+  expect((await request(app).get(`/api/books/${data.bookId}`).expect(200)).body.availableCopies).toBe(1);
+});
+
 async function createHistory() {
   const first = await createFixtures(5);
   const secondReader = await createReader();

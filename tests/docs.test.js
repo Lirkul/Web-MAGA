@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { expect, it, vi } from 'vitest';
 import app from '../src/app.js';
+import { checkDatabaseConnection } from '../src/db/pool.js';
 
 vi.mock('../src/db/pool.js', () => ({ checkDatabaseConnection: vi.fn(), pool: { query: vi.fn() } }));
 
@@ -38,4 +39,38 @@ it('enables Try it out against this server and describes CSV as a required binar
   const init = await request(app).get('/docs/swagger-ui-init.js').expect(200);
   expect(init.text).toContain('"tryItOutEnabled": true');
   expect(init.text).toContain('"url": "/docs/openapi.json"');
+});
+
+it('resolves every OpenAPI reference and provides an example for every successful JSON response', async () => {
+  const { body } = await request(app).get('/docs/openapi.json').expect(200);
+  const resolveReference = (reference) => reference.slice(2).split('/').reduce((value, key) => value?.[key], body);
+  const visit = (value) => {
+    if (!value || typeof value !== 'object') return;
+    if (value.$ref) {
+      expect(value.$ref).toMatch(/^#\//);
+      expect(resolveReference(value.$ref)).toBeDefined();
+    }
+    Object.values(value).forEach(visit);
+  };
+  visit(body);
+  for (const methods of Object.values(body.paths)) {
+    for (const operation of Object.values(methods)) {
+      expect(operation.summary).toMatch(/[А-Яа-яЁё]/);
+      const success = Object.entries(operation.responses).filter(([code]) => code.startsWith('2'));
+      expect(success.length).toBeGreaterThan(0);
+      for (const [code, response] of success) {
+        if (code === '204') continue;
+        const resolved = response.$ref ? resolveReference(response.$ref) : response;
+        expect(resolved.content['application/json'].example).toBeDefined();
+      }
+    }
+  }
+});
+
+it('keeps Swagger and OpenAPI accessible when health reports a database failure', async () => {
+  checkDatabaseConnection.mockRejectedValueOnce(new Error('Database unavailable'));
+  await request(app).get('/api/health').expect(503, { status: 'error', database: 'disconnected' });
+  await request(app).get('/docs/').expect(200).expect('Content-Type', /html/);
+  const response = await request(app).get('/docs/openapi.json').expect(200);
+  expect(response.body.openapi).toBe('3.0.3');
 });
