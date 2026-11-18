@@ -1,0 +1,335 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Система управления библиотечным фондом", "version": "1.0.0" },
+  "servers": [{ "url": "/" }],
+  "tags": [
+    { "name": "Books", "description": "Книги и импорт CSV" },
+    { "name": "Readers", "description": "Читатели" },
+    { "name": "Loans", "description": "Выдача и возврат книг" },
+    { "name": "Statistics", "description": "Статистика библиотеки" },
+    { "name": "Health", "description": "Состояние приложения и БД" }
+  ],
+  "paths": {
+    "/api/books": {
+      "post": {
+        "tags": ["Books"], "summary": "Создать книгу",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BookCreate" } } } },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Book" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "get": {
+        "tags": ["Books"], "summary": "Получить список книг",
+        "parameters": [
+          { "$ref": "#/components/parameters/Search" },
+          { "name": "genre", "in": "query", "schema": { "type": "string" }, "example": "Программирование" },
+          { "$ref": "#/components/parameters/Page" }, { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Books" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/books/{id}": {
+      "get": {
+        "tags": ["Books"], "summary": "Получить книгу по ID",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Book" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "patch": {
+        "tags": ["Books"], "summary": "Изменить книгу",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BookUpdate" } } } },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Book" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "delete": {
+        "tags": ["Books"], "summary": "Удалить книгу без истории выдач",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "204": { "description": "Книга удалена, тело ответа отсутствует" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/books/import": {
+      "post": {
+        "tags": ["Books"], "summary": "Импортировать книги из CSV",
+        "description": "CSV UTF-8, до 10 МиБ. Колонки: title,authors,isbn,publicationYear,genre,totalCopies. Авторы разделяются |. Дубликаты и неверные записи пропускаются; уже импортированные книги сохраняются при ошибке файла.",
+        "requestBody": {
+          "required": true,
+          "content": { "multipart/form-data": { "schema": {
+            "type": "object", "required": ["file"], "additionalProperties": false,
+            "properties": { "file": { "type": "string", "format": "binary", "description": "Файл .csv; пример: samples/books.csv" } }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "Результат импорта", "content": { "application/json": { "example": {
+            "processed": 3, "imported": 1, "duplicates": 1, "invalid": 1,
+            "errors": [{ "row": 4, "message": "isbn: Некорректный ISBN-10 или ISBN-13" }]
+          } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "413": { "description": "CSV превышает 10 МиБ" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/readers": {
+      "post": {
+        "tags": ["Readers"], "summary": "Зарегистрировать читателя",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReaderCreate" } } } },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Reader" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "get": {
+        "tags": ["Readers"], "summary": "Получить список читателей",
+        "parameters": [
+          { "$ref": "#/components/parameters/Search" },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "blocked"] } },
+          { "$ref": "#/components/parameters/Page" }, { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Readers" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/readers/{id}": {
+      "get": {
+        "tags": ["Readers"], "summary": "Получить читателя по ID",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Reader" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "patch": {
+        "tags": ["Readers"], "summary": "Изменить данные или статус читателя",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReaderUpdate" } } } },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Reader" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/loans": {
+      "post": {
+        "tags": ["Loans"], "summary": "Выдать книгу читателю",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": {
+          "type": "object", "required": ["bookId", "readerId"], "additionalProperties": false,
+          "properties": {
+            "bookId": { "type": "integer", "minimum": 1 }, "readerId": { "type": "integer", "minimum": 1 }
+          }, "example": { "bookId": 1, "readerId": 1 }
+        } } } },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Loan" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "get": {
+        "tags": ["Loans"], "summary": "Получить список выдач",
+        "parameters": [
+          { "name": "bookId", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "readerId", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "overdue", "returned"] } },
+          { "$ref": "#/components/parameters/Page" }, { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Loans" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/loans/{id}": {
+      "get": {
+        "tags": ["Loans"], "summary": "Получить выдачу по ID",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Loan" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/loans/{id}/return": {
+      "post": {
+        "tags": ["Loans"], "summary": "Вернуть книгу и рассчитать штраф",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "example": {} } } } },
+        "responses": {
+          "200": { "description": "Книга возвращена", "content": { "application/json": { "example": {
+            "id": 1, "bookId": 1, "readerId": 1, "loanedAt": "2026-11-18T10:00:00.000Z", "dueDate": "2026-12-02",
+            "returnedAt": "2026-12-03T10:00:00.000Z", "status": "returned", "fineAmount": "10.00", "createdAt": "2026-11-18T10:00:00.000Z"
+          } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/stats/top-books": {
+      "get": {
+        "tags": ["Statistics"], "summary": "Получить топ-5 книг за период",
+        "parameters": [
+          { "name": "from", "in": "query", "required": true, "schema": { "type": "string", "format": "date" }, "example": "2026-11-01" },
+          { "name": "to", "in": "query", "required": true, "schema": { "type": "string", "format": "date" }, "example": "2026-11-30" }
+        ],
+        "responses": {
+          "200": { "description": "Книги и количество выдач", "content": { "application/json": { "example": {
+            "period": { "from": "2026-11-01", "to": "2026-11-30" },
+            "data": [{ "bookId": 1, "title": "Чистый код", "authors": ["Роберт Мартин"], "isbn": "9780132350884", "loansCount": 5 }]
+          } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/stats/overdue-readers": {
+      "get": {
+        "tags": ["Statistics"], "summary": "Получить читателей с текущими просрочками",
+        "parameters": [{ "$ref": "#/components/parameters/Page" }, { "$ref": "#/components/parameters/Limit" }],
+        "responses": {
+          "200": { "description": "Читатели с просрочками", "content": { "application/json": { "example": {
+            "data": [{ "readerId": 1, "fullName": "Иван Иванов", "email": "ivan@example.com", "registrationNumber": "R-001", "status": "active", "overdueLoansCount": 2, "oldestDueDate": "2026-11-15", "maxDaysOverdue": 3 }],
+            "pagination": { "page": 1, "limit": 10, "total": 1, "totalPages": 1 }
+          } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": ["Health"], "summary": "Проверить состояние приложения и БД",
+        "responses": {
+          "200": { "description": "Приложение и БД доступны", "content": { "application/json": { "example": { "status": "ok", "database": "connected" } } } },
+          "503": { "description": "БД недоступна", "content": { "application/json": { "example": { "status": "error", "database": "disconnected" } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Id": { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 }, "example": 1 },
+      "Page": { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } },
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 } },
+      "Search": { "name": "search", "in": "query", "schema": { "type": "string", "minLength": 1 }, "description": "Поиск по подстроке" }
+    },
+    "schemas": {
+      "BookCreate": {
+        "type": "object", "required": ["title", "authors", "isbn"], "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "authors": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "isbn": { "type": "string", "description": "ISBN-10 или ISBN-13" },
+          "publicationYear": { "type": "integer", "minimum": 1, "description": "Не позже следующего календарного года" },
+          "genre": { "type": "string" },
+          "totalCopies": { "type": "integer", "minimum": 0, "maximum": 2147483647, "default": 0 }
+        },
+        "example": { "title": "Чистый код", "authors": ["Роберт Мартин"], "isbn": "9780132350884", "publicationYear": 2008, "genre": "Программирование", "totalCopies": 5 }
+      },
+      "BookUpdate": {
+        "type": "object", "minProperties": 1, "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "authors": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "isbn": { "type": "string" }, "publicationYear": { "type": "integer", "minimum": 1, "nullable": true },
+          "genre": { "type": "string", "nullable": true },
+          "totalCopies": { "type": "integer", "minimum": 0, "maximum": 2147483647 }
+        }, "example": { "title": "Чистый код", "totalCopies": 5 }
+      },
+      "ReaderCreate": {
+        "type": "object", "required": ["fullName", "email", "registrationNumber"], "additionalProperties": false,
+        "properties": {
+          "fullName": { "type": "string", "minLength": 1 }, "email": { "type": "string", "format": "email" },
+          "registrationNumber": { "type": "string", "minLength": 1 }
+        }, "example": { "fullName": "Иван Иванов", "email": "ivan@example.com", "registrationNumber": "R-001" }
+      },
+      "ReaderUpdate": {
+        "type": "object", "minProperties": 1, "additionalProperties": false,
+        "properties": {
+          "fullName": { "type": "string", "minLength": 1 }, "email": { "type": "string", "format": "email" },
+          "registrationNumber": { "type": "string", "minLength": 1 }, "status": { "type": "string", "enum": ["active", "blocked"] }
+        }, "example": { "status": "blocked" }
+      }
+    },
+    "responses": {
+      "Book": {
+        "description": "Книга", "content": { "application/json": { "example": {
+          "id": 1, "title": "Чистый код", "authors": ["Роберт Мартин"], "isbn": "9780132350884", "publicationYear": 2008,
+          "genre": "Программирование", "totalCopies": 5, "availableCopies": 5,
+          "createdAt": "2026-11-18T10:00:00.000Z", "updatedAt": "2026-11-18T10:00:00.000Z"
+        } } }
+      },
+      "Books": {
+        "description": "Список книг", "content": { "application/json": { "example": {
+          "data": [{ "id": 1, "title": "Чистый код", "authors": ["Роберт Мартин"], "isbn": "9780132350884", "publicationYear": 2008, "genre": "Программирование", "totalCopies": 5, "availableCopies": 5, "createdAt": "2026-11-18T10:00:00.000Z", "updatedAt": "2026-11-18T10:00:00.000Z" }],
+          "pagination": { "page": 1, "limit": 10, "total": 1, "totalPages": 1 }
+        } } }
+      },
+      "Reader": {
+        "description": "Читатель", "content": { "application/json": { "example": {
+          "id": 1, "fullName": "Иван Иванов", "email": "ivan@example.com", "registrationNumber": "R-001", "status": "active",
+          "createdAt": "2026-11-18T10:00:00.000Z", "updatedAt": "2026-11-18T10:00:00.000Z"
+        } } }
+      },
+      "Readers": {
+        "description": "Список читателей", "content": { "application/json": { "example": {
+          "data": [{ "id": 1, "fullName": "Иван Иванов", "email": "ivan@example.com", "registrationNumber": "R-001", "status": "active", "createdAt": "2026-11-18T10:00:00.000Z", "updatedAt": "2026-11-18T10:00:00.000Z" }],
+          "pagination": { "page": 1, "limit": 10, "total": 1, "totalPages": 1 }
+        } } }
+      },
+      "Loan": {
+        "description": "Выдача книги", "content": { "application/json": { "example": {
+          "id": 1, "bookId": 1, "readerId": 1, "loanedAt": "2026-11-18T10:00:00.000Z", "dueDate": "2026-12-02",
+          "returnedAt": null, "status": "active", "fineAmount": "0.00", "createdAt": "2026-11-18T10:00:00.000Z"
+        } } }
+      },
+      "Loans": {
+        "description": "Список выдач", "content": { "application/json": { "example": {
+          "data": [{ "id": 1, "bookId": 1, "readerId": 1, "loanedAt": "2026-11-18T10:00:00.000Z", "dueDate": "2026-12-02", "returnedAt": null, "status": "active", "fineAmount": "0.00", "createdAt": "2026-11-18T10:00:00.000Z" }],
+          "pagination": { "page": 1, "limit": 10, "total": 1, "totalPages": 1 }
+        } } }
+      },
+      "BadRequest": { "description": "Некорректные параметры, JSON или CSV" },
+      "NotFound": { "description": "Книга, читатель или выдача не найдены" },
+      "Conflict": { "description": "Дубликат уникальных данных или конфликт состояния книги, читателя либо выдачи" },
+      "InternalError": { "description": "Внутренняя ошибка сервера" }
+    }
+  }
+}

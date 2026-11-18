@@ -1,4 +1,6 @@
 import express from 'express';
+import swaggerUi from 'swagger-ui-express';
+import openapi from './docs/openapi.json' with { type: 'json' };
 import { checkDatabaseConnection } from './db/pool.js';
 import { ApiError } from './errors/ApiError.js';
 import { errorHandler } from './middlewares/errorHandler.js';
@@ -10,6 +12,12 @@ import statsRoutes from './routes/stats.routes.js';
 const app = express();
 
 app.use(express.json());
+
+app.get('/docs/openapi.json', (req, res) => res.json(openapi));
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(null, {
+  customSiteTitle: 'Web-MAGA — Swagger UI',
+  swaggerOptions: { url: '/docs/openapi.json', tryItOutEnabled: true, validatorUrl: null },
+}));
 
 app.get('/api/health', async (req, res) => {
   try {
